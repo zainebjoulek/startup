@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 try:
     load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.abspath(_file_)), ".env"))
 except Exception:
-    pass 
+    pass  # _file_ not available on Streamlit Cloud; secrets come from st.secrets
 
 def _secret(key: str, fallback: str = "") -> str:
     """Read from Streamlit secrets (Cloud) or .env (local)."""
@@ -149,8 +149,9 @@ def check_user() -> bool:
                         except Exception as exc:
                             st.error(f"❌ Impossible d'envoyer l'email : {exc}")
                             st.caption(
-                                "Vérifiez SMTP_EMAIL / SMTP_PASSWORD dans le fichier .env "
-                                "et assurez-vous d'utiliser un *mot de passe d'application* Gmail."
+                                f"Compte expéditeur utilisé : {SMTP_EMAIL or '(vide — secret non configuré)'} | "
+                                f"Mot de passe chargé : {'✅ oui' if SMTP_PASSWORD else '❌ non (vide)'}. "
+                                "Sur Streamlit Cloud, configurez les secrets dans *Settings → Secrets*."
                             )
 
     # ── STEP 2 : verify OTP ────────────────────────────────────────
@@ -364,4 +365,3 @@ if check_user():
         st.success(
             f"R² = {model.rsquared:.3f} | Adjusted R² = {model.rsquared_adj:.3f}"
         )
-
