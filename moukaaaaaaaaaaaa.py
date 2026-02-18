@@ -2,16 +2,14 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import statsmodels.api as sm
-from sklearn.preprocessing import LabelEncoder
 
 # =========================
-# CONFIG PAGE
+# PAGE CONFIG
 # =========================
 st.set_page_config(
     page_title="Startup Profit Predictor",
     page_icon="💰",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
 # =========================
@@ -49,206 +47,173 @@ def check_user():
 
     return True
 
-
 # =========================
-# DATA
-# =========================
-@st.cache_data
-def load_data():
-    try:
-        df = pd.read_csv('50_Startups.csv')
-        return df
-    except FileNotFoundError:
-        st.warning("CSV file not found. Using sample data.")
-        data = {
-            'R&D Spend': [165349.2, 162597.7, 153441.51, 144372.41, 142107.34],
-            'Administration': [136897.8, 151377.59, 101145.55, 118671.85, 91391.77],
-            'Marketing Spend': [471784.1, 443898.53, 407934.54, 383199.62, 366168.42],
-            'State': ['New York', 'California', 'Florida', 'New York', 'Florida'],
-            'Profit': [192261.83, 191792.06, 191050.39, 182901.99, 166187.94]
-        }
-        return pd.DataFrame(data)
-
-
-@st.cache_resource
-def train_model(df):
-
-    data = df.copy()
-
-    le = LabelEncoder()
-    data['State'] = le.fit_transform(data['State'])
-
-    X = data[['R&D Spend', 'Administration', 'Marketing Spend', 'State']].values
-    y = data['Profit'].values
-
-    # Add constant
-    X = np.append(arr=np.ones((X.shape[0], 1)).astype(int), values=X, axis=1)
-
-    # Final model uses const + R&D Spend
-    X_opt = X[:, [0, 1]]
-
-    model = sm.OLS(endog=y, exog=X_opt).fit()
-
-    return model
-
-
-# =========================
-# VALIDATION
-# =========================
-def validate_inputs(rd_spend, admin, marketing):
-
-    errors = []
-
-    if rd_spend < 0:
-        errors.append("❌ R&D Spend cannot be negative")
-
-    if admin < 0:
-        errors.append("❌ Administration cannot be negative")
-
-    if marketing < 0:
-        errors.append("❌ Marketing Spend cannot be negative")
-
-    return errors
-
-
-# =========================
-# MAIN APP
+# CHECK USER BEFORE LOADING APP
 # =========================
 if check_user():
 
-    try:
+    # =========================
+    # APP TITLE
+    # =========================
+    st.title("💰 Automatic Backward Elimination (OLS)")
+    st.markdown("---")
 
-        df = load_data()
-        model = train_model(df)
+    if "user_info" in st.session_state:
+        user = st.session_state.user_info
+        st.sidebar.success(f"👋 Bienvenue {user['prenom']} {user['nom']}")
+        st.sidebar.caption(user["email"])
+        if st.sidebar.button("🚪 Logout", use_container_width=True):
+            st.session_state.user_valid = False
+            st.rerun()
 
-        # SIDEBAR
-        with st.sidebar:
+    # =========================
+    # TRAIN MODEL
+    # =========================
+    @st.cache_resource
+    def train_model():
 
-            if "user_info" in st.session_state:
-                user = st.session_state.user_info
-                st.success(f"👋 Bienvenue {user['prenom']} {user['nom']}")
-                st.caption(user["email"])
+        np.random.seed(42)
+        n = 50
 
-            st.markdown("---")
+        rd = np.random.uniform(0, 200000, n)
+        admin = np.random.uniform(50000, 150000, n)
+        marketing = np.random.uniform(0, 300000, n)
+        state = np.random.choice([0, 1, 2], n)  # CA, NY, FL
 
-            st.header("📊 Model Stats")
-            st.metric("R²", f"{model.rsquared:.4f}")
-            st.metric("Observations", len(df))
+        profit = (
+            49000
+            + 0.85 * rd
+            + 0.02 * marketing
+            + np.random.normal(0, 10000, n)
+        )
 
-            if st.button("🚪 Logout", use_container_width=True):
-                st.session_state.user_valid = False
-                st.rerun()
+        data = pd.DataFrame({
+            "R&D Spend": rd,
+            "Administration": admin,
+            "Marketing Spend": marketing,
+            "State_NY": (state == 1).astype(int),
+            "State_FL": (state == 2).astype(int),
+            "Profit": profit
+        })
 
-        # MAIN TITLE
-        st.title("🚀 Startup Profit Prediction System")
-        st.markdown("Predict startup profit based on spending and location")
-        st.markdown("---")
+        X = data.drop("Profit", axis=1)
+        y = data["Profit"]
 
-        col1, col2 = st.columns(2)
+        X = sm.add_constant(X)
 
-        with col1:
+        SL = 0.05
+        all_steps = []
+        step = 1
 
-            st.subheader("📝 Input Variables")
+        while True:
+            model = sm.OLS(y, X).fit()
+            p_values = model.pvalues
+            max_p = p_values.max()
 
-            rd_spend = st.number_input("💡 R&D Spend", 0.0, 500000.0, 100000.0, 1000.0)
-            administration = st.number_input("📋 Administration", 0.0, 500000.0, 120000.0, 1000.0)
-            marketing_spend = st.number_input("📢 Marketing Spend", 0.0, 500000.0, 200000.0, 1000.0)
+            all_steps.append({
+                "step": step,
+                "variables": list(X.columns),
+                "summary": model.summary().as_text()
+            })
 
-            state = st.selectbox(
-                "📍 State",
-                options=["New York", "California", "Florida"]
-            )
+            if max_p > SL:
+                feature_to_remove = p_values.idxmax()
+                X = X.drop(columns=[feature_to_remove])
+                step += 1
+            else:
+                break
 
-        with col2:
+        results = {
+            "model": model,
+            "selected_columns": X.columns,
+            "all_steps": all_steps,
+            "final_summary": model.summary().as_text()
+        }
 
-            st.subheader("🎯 Prediction")
+        return results
 
-            validation_errors = validate_inputs(
-                rd_spend, administration, marketing_spend
-            )
+    BACKWARD_ELIMINATION_RESULTS = train_model()
+    model = BACKWARD_ELIMINATION_RESULTS["model"]
+    selected_columns = BACKWARD_ELIMINATION_RESULTS["selected_columns"]
 
-            if validation_errors:
-                for err in validation_errors:
-                    st.error(err)
+    # =========================
+    # USER INPUT
+    # =========================
+    col1, col2 = st.columns(2)
 
-            new_input = np.array([[1.0, rd_spend]])
+    with col1:
+        rd_input = st.number_input("R&D Spend", 0.0, 200000.0, 50000.0)
+        admin_input = st.number_input("Administration", 0.0, 200000.0, 120000.0)
+        marketing_input = st.number_input("Marketing Spend", 0.0, 300000.0, 200000.0)
 
-            if 'predictions' not in st.session_state:
-                st.session_state.predictions = []
+        state_input = st.selectbox(
+            "State",
+            ["California", "New York", "Florida"]
+        )
 
-            if st.button("Predict", disabled=bool(validation_errors)):
+    with col2:
+        predict_button = st.button("🎯 Predict Profit", type="primary", use_container_width=True)
+        show_all_button = st.button("📊 Tous les résultats", use_container_width=True)
+        show_last_button = st.button("🎯 Résultat final", use_container_width=True)
 
-                prediction = model.predict(new_input)[0]
+    # =========================
+    # PREDICTION
+    # =========================
+    if predict_button:
 
-                st.session_state.predictions.append({
-                    'R&D Spend': rd_spend,
-                    'Administration': administration,
-                    'Marketing Spend': marketing_spend,
-                    'State': state,
-                    'Predicted Profit': prediction
-                })
+        input_data = pd.DataFrame({
+            "R&D Spend": [rd_input],
+            "Administration": [admin_input],
+            "Marketing Spend": [marketing_input],
+            "State_NY": [1 if state_input == "New York" else 0],
+            "State_FL": [1 if state_input == "Florida" else 0]
+        })
 
-        # =========================
-        # BUTTONS FOR RESULTS
-        # =========================
-        st.markdown("---")
-        st.subheader("🛠️ Résultats Avancés")
+        input_data = sm.add_constant(input_data, has_constant="add")
+        input_data = input_data[selected_columns]
+        prediction = model.predict(input_data)
 
-        col_btn1, col_btn2 = st.columns(2)
+        st.success("✅ Prediction Successful")
+        st.metric("💵 Predicted Profit", f"${prediction.iloc[0]:,.2f}")
 
-        with col_btn1:
-            if st.button("📋 Voir résumé OLS complet"):
-                st.text(model.summary())
+    # =========================
+    # SHOW ALL BACKWARD STEPS
+    # =========================
+    if show_all_button:
+        st.markdown("## 📊 Toutes les étapes du Backward Elimination")
+        all_steps = BACKWARD_ELIMINATION_RESULTS["all_steps"]
 
-        with col_btn2:
-            if st.button("📈 Voir dernière prédiction"):
-                if st.session_state.predictions:
-                    last = st.session_state.predictions[-1]
-                    st.metric("💰 Profit", f"${last['Predicted Profit']:,.2f}")
-                    st.metric("💡 R&D Spend", f"${last['R&D Spend']:,.2f}")
-                    st.metric("📍 State", last['State'])
-                else:
-                    st.info("Aucune prédiction pour le moment.")
+        st.info(f"Nombre total d'étapes : *{len(all_steps)}*")
 
-        # =========================
-        # RESULTS TABLE
-        # =========================
-        st.markdown("---")
+        for step in all_steps:
+            with st.expander(
+                f"Étape {step['step']} — Variables: {step['variables']}",
+                expanded=(step["step"] == 1)
+            ):
+                st.code(step["summary"])
 
-        if st.session_state.predictions:
+    # =========================
+    # SHOW FINAL MODEL ONLY
+    # =========================
+    if show_last_button:
+        st.markdown("## 🎯 Modèle Final")
 
-            last = st.session_state.predictions[-1]
+        st.code(BACKWARD_ELIMINATION_RESULTS["final_summary"])
 
-            st.subheader("📈 Latest Prediction")
+        coef = model.params
+        equation_terms = []
 
-            colA, colB, colC = st.columns(3)
+        for name, value in coef.items():
+            if name == "const":
+                equation_terms.append(f"{value:.2f}")
+            else:
+                equation_terms.append(f"{value:.4f} × {name}")
 
-            colA.metric("💰 Profit", f"${last['Predicted Profit']:,.2f}")
-            colB.metric("💡 R&D", f"${last['R&D Spend']:,.2f}")
-            colC.metric("📍 State", last['State'])
+        equation = "Profit = " + " + ".join(equation_terms)
 
-            df_pred = pd.DataFrame(st.session_state.predictions)
+        st.markdown("### 📐 Équation du modèle final")
+        st.latex(equation)
 
-            st.dataframe(df_pred, use_container_width=True)
-
-            if st.button("🗑️ Clear"):
-                st.session_state.predictions = []
-                st.rerun()
-
-        # DATASET
-        st.markdown("---")
-
-        st.subheader("📊 Dataset Overview")
-
-        col3, col4, col5, col6 = st.columns(4)
-
-        col3.metric("Startups", len(df))
-        col4.metric("Avg Profit", f"${df['Profit'].mean():,.0f}")
-        col5.metric("Min Profit", f"${df['Profit'].min():,.0f}")
-        col6.metric("Max Profit", f"${df['Profit'].max():,.0f}")
-
-        with st.expander("View Dataset"):
-            st.dataframe(df, use_container_width=True)
-
-    except Exception as e:
-        st.error(str(e))
+        st.success(
+            f"R² = {model.rsquared:.3f} | Adjusted R² = {model.rsquared_adj:.3f}"
+        )
