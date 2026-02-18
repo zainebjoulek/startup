@@ -11,21 +11,11 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
 
-try:
-    load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.abspath(_file_)), ".env"))
-except Exception:
-    pass  # _file_ not available on Streamlit Cloud; secrets come from st.secrets
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
-def _secret(key: str, fallback: str = "") -> str:
-    """Read from Streamlit secrets (Cloud) or .env (local)."""
-    try:
-        return st.secrets[key]
-    except (KeyError, FileNotFoundError):
-        return os.getenv(key, fallback)
-
-SMTP_EMAIL    = _secret("SMTP_EMAIL")
-SMTP_PASSWORD = _secret("SMTP_PASSWORD")
-JWT_SECRET    = _secret("JWT_SECRET", "default-secret-change-me")
+SMTP_EMAIL    = os.getenv("SMTP_EMAIL")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+JWT_SECRET    = os.getenv("JWT_SECRET", "default-secret-change-me")
 
 # =========================
 # EMAIL OTP SENDER
@@ -61,13 +51,12 @@ def send_otp_email(to_email: str, otp_code: str, nom: str, prenom: str):
 # JWT HELPERS
 # =========================
 def create_jwt(nom: str, prenom: str, email: str) -> str:
-    now = datetime.datetime.now(datetime.timezone.utc)
     payload = {
         "nom":    nom,
         "prenom": prenom,
         "email":  email,
-        "iat":    now,
-        "exp":    now + datetime.timedelta(hours=24),
+        "iat":    datetime.datetime.utcnow(),
+        "exp":    datetime.datetime.utcnow() + datetime.timedelta(hours=24),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
 
@@ -137,7 +126,7 @@ def check_user() -> bool:
                     otp = str(random.randint(100000, 999999))
                     st.session_state["otp_code"]    = otp
                     st.session_state["otp_expiry"]  = (
-                        datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=10)
+                        datetime.datetime.utcnow() + datetime.timedelta(minutes=10)
                     )
                     st.session_state["pending_user"] = {
                         "nom": nom, "prenom": prenom, "email": email
@@ -150,15 +139,14 @@ def check_user() -> bool:
                         except Exception as exc:
                             st.error(f"❌ Impossible d'envoyer l'email : {exc}")
                             st.caption(
-                                f"Compte expéditeur utilisé : {SMTP_EMAIL or '(vide — secret non configuré)'} | "
-                                f"Mot de passe chargé : {'✅ oui' if SMTP_PASSWORD else '❌ non (vide)'}. "
-                                "Sur Streamlit Cloud, configurez les secrets dans *Settings → Secrets*."
+                                "Vérifiez SMTP_EMAIL / SMTP_PASSWORD dans le fichier .env "
+                                "et assurez-vous d'utiliser un **mot de passe d'application** Gmail."
                             )
 
     # ── STEP 2 : verify OTP ────────────────────────────────────────
     else:
         pending = st.session_state["pending_user"]
-        st.success(f"📧 Un code à 6 chiffres a été envoyé à *{pending['email']}*")
+        st.success(f"📧 Un code à 6 chiffres a été envoyé à **{pending['email']}**")
         st.caption("Le code expire dans 10 minutes.")
 
         with st.form("otp_form"):
@@ -177,7 +165,7 @@ def check_user() -> bool:
                 st.rerun()
 
             if verify:
-                now = datetime.datetime.now(datetime.timezone.utc)
+                now = datetime.datetime.utcnow()
                 if now > st.session_state["otp_expiry"]:
                     st.error("⏰ Code expiré. Veuillez recommencer.")
                     for k in ("otp_code", "otp_expiry", "otp_sent", "pending_user"):
