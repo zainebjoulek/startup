@@ -142,7 +142,6 @@ if check_user():
         # MAIN TITLE
         st.title("🚀 Startup Profit Prediction System")
         st.markdown("Predict startup profit based on spending and location")
-
         st.markdown("---")
 
         col1, col2 = st.columns(2)
@@ -189,7 +188,31 @@ if check_user():
                     'Predicted Profit': prediction
                 })
 
-        # RESULTS
+        # =========================
+        # BUTTONS FOR RESULTS
+        # =========================
+        st.markdown("---")
+        st.subheader("🛠️ Résultats Avancés")
+
+        col_btn1, col_btn2 = st.columns(2)
+
+        with col_btn1:
+            if st.button("📋 Voir résumé OLS complet"):
+                st.text(model.summary())
+
+        with col_btn2:
+            if st.button("📈 Voir dernière prédiction"):
+                if st.session_state.predictions:
+                    last = st.session_state.predictions[-1]
+                    st.metric("💰 Profit", f"${last['Predicted Profit']:,.2f}")
+                    st.metric("💡 R&D Spend", f"${last['R&D Spend']:,.2f}")
+                    st.metric("📍 State", last['State'])
+                else:
+                    st.info("Aucune prédiction pour le moment.")
+
+        # =========================
+        # RESULTS TABLE
+        # =========================
         st.markdown("---")
 
         if st.session_state.predictions:
@@ -228,5 +251,4 @@ if check_user():
             st.dataframe(df, use_container_width=True)
 
     except Exception as e:
-        st.error(str(e)) 
-
+        st.error(str(e))
