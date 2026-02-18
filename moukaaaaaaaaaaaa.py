@@ -11,7 +11,10 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
 
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.abspath(_file_)), ".env"))
+try:
+    load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.abspath(_file_)), ".env"))
+except Exception:
+    pass 
 
 def _secret(key: str, fallback: str = "") -> str:
     """Read from Streamlit secrets (Cloud) or .env (local)."""
@@ -361,3 +364,4 @@ if check_user():
         st.success(
             f"R² = {model.rsquared:.3f} | Adjusted R² = {model.rsquared_adj:.3f}"
         )
+
