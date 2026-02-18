@@ -5,10 +5,11 @@
 # To create one: Google Account → Security → 2-Step Verification → App Passwords
 # =============================================
 SMTP_EMAIL = "joulekzaineb123@gmail.com"
-SMTP_PASSWORD = "mjczdkrwvwhmazls"
+SMTP_PASSWORD = "tkiz wdoj iwsg kmpr"
 
 # =============================================
 # JWT SECRET KEY — change this to a long random string
 # =============================================
 JWT_SECRET = "change-this-to-a-long-random-secret-key-123456"
+
 
