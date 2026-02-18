@@ -1,0 +1,13 @@
+# =============================================
+# SMTP CONFIG (Gmail)
+# =============================================
+# Use a Gmail App Password (NOT your real password).
+# To create one: Google Account → Security → 2-Step Verification → App Passwords
+# =============================================
+SMTP_EMAIL=joulekzaineb123@gmail.com
+SMTP_PASSWORD=mjczdkrwvwhmazls
+
+# =============================================
+# JWT SECRET KEY — change this to a long random string
+# =============================================
+JWT_SECRET=change-this-to-a-long-random-secret-key-123456
