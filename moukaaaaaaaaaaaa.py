@@ -11,11 +11,18 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
 
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.abspath(_file_)), ".env"))
 
-SMTP_EMAIL    = os.getenv("SMTP_EMAIL")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
-JWT_SECRET    = os.getenv("JWT_SECRET", "default-secret-change-me")
+def _secret(key: str, fallback: str = "") -> str:
+    """Read from Streamlit secrets (Cloud) or .env (local)."""
+    try:
+        return st.secrets[key]
+    except (KeyError, FileNotFoundError):
+        return os.getenv(key, fallback)
+
+SMTP_EMAIL    = _secret("SMTP_EMAIL")
+SMTP_PASSWORD = _secret("SMTP_PASSWORD")
+JWT_SECRET    = _secret("JWT_SECRET", "default-secret-change-me")
 
 # =========================
 # EMAIL OTP SENDER
@@ -140,13 +147,13 @@ def check_user() -> bool:
                             st.error(f"❌ Impossible d'envoyer l'email : {exc}")
                             st.caption(
                                 "Vérifiez SMTP_EMAIL / SMTP_PASSWORD dans le fichier .env "
-                                "et assurez-vous d'utiliser un **mot de passe d'application** Gmail."
+                                "et assurez-vous d'utiliser un *mot de passe d'application* Gmail."
                             )
 
     # ── STEP 2 : verify OTP ────────────────────────────────────────
     else:
         pending = st.session_state["pending_user"]
-        st.success(f"📧 Un code à 6 chiffres a été envoyé à **{pending['email']}**")
+        st.success(f"📧 Un code à 6 chiffres a été envoyé à *{pending['email']}*")
         st.caption("Le code expire dans 10 minutes.")
 
         with st.form("otp_form"):
