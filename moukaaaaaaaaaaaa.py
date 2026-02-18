@@ -61,12 +61,13 @@ def send_otp_email(to_email: str, otp_code: str, nom: str, prenom: str):
 # JWT HELPERS
 # =========================
 def create_jwt(nom: str, prenom: str, email: str) -> str:
+    now = datetime.datetime.now(datetime.timezone.utc)
     payload = {
         "nom":    nom,
         "prenom": prenom,
         "email":  email,
-        "iat":    datetime.datetime.utcnow(),
-        "exp":    datetime.datetime.utcnow() + datetime.timedelta(hours=24),
+        "iat":    now,
+        "exp":    now + datetime.timedelta(hours=24),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
 
@@ -136,7 +137,7 @@ def check_user() -> bool:
                     otp = str(random.randint(100000, 999999))
                     st.session_state["otp_code"]    = otp
                     st.session_state["otp_expiry"]  = (
-                        datetime.datetime.utcnow() + datetime.timedelta(minutes=10)
+                        datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=10)
                     )
                     st.session_state["pending_user"] = {
                         "nom": nom, "prenom": prenom, "email": email
@@ -176,7 +177,7 @@ def check_user() -> bool:
                 st.rerun()
 
             if verify:
-                now = datetime.datetime.utcnow()
+                now = datetime.datetime.now(datetime.timezone.utc)
                 if now > st.session_state["otp_expiry"]:
                     st.error("⏰ Code expiré. Veuillez recommencer.")
                     for k in ("otp_code", "otp_expiry", "otp_sent", "pending_user"):
