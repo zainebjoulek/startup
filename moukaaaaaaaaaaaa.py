@@ -2,6 +2,70 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import statsmodels.api as sm
+import smtplib
+import random
+import datetime
+import os
+import jwt
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from dotenv import load_dotenv
+
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+
+SMTP_EMAIL    = os.getenv("SMTP_EMAIL")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+JWT_SECRET    = os.getenv("JWT_SECRET", "default-secret-change-me")
+
+# =========================
+# EMAIL OTP SENDER
+# =========================
+def send_otp_email(to_email: str, otp_code: str, nom: str, prenom: str):
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "🔐 Code de vérification – Startup Profit Predictor"
+    msg["From"]    = SMTP_EMAIL
+    msg["To"]      = to_email
+
+    html_body = f"""
+    <html>
+    <body style="font-family:Arial,sans-serif;padding:30px;">
+        <h2>Bonjour {prenom} {nom},</h2>
+        <p>Voici votre code de vérification à usage unique :</p>
+        <h1 style="font-size:48px;letter-spacing:12px;color:#4CAF50;
+                   background:#f4f4f4;padding:20px 30px;border-radius:8px;
+                   display:inline-block;">{otp_code}</h1>
+        <p>⏱️ Ce code est valable <strong>10 minutes</strong>.</p>
+        <p style="color:#999;font-size:12px;">Si vous n'avez pas demandé ce code, ignorez cet email.</p>
+    </body>
+    </html>
+    """
+    msg.attach(MIMEText(html_body, "html"))
+
+    with smtplib.SMTP("smtp.gmail.com", 587) as server:
+        server.starttls()
+        server.login(SMTP_EMAIL, SMTP_PASSWORD)
+        server.sendmail(SMTP_EMAIL, to_email, msg.as_string())
+
+
+# =========================
+# JWT HELPERS
+# =========================
+def create_jwt(nom: str, prenom: str, email: str) -> str:
+    payload = {
+        "nom":    nom,
+        "prenom": prenom,
+        "email":  email,
+        "iat":    datetime.datetime.utcnow(),
+        "exp":    datetime.datetime.utcnow() + datetime.timedelta(hours=24),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+
+
+def verify_jwt(token: str):
+    try:
+        return jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+        return None
 
 # =========================
 # PAGE CONFIG
@@ -13,39 +77,112 @@ st.set_page_config(
 )
 
 # =========================
-# USER FORM (Nom / Prenom / Email)
+# USER FORM  →  OTP  →  JWT
 # =========================
-def check_user():
+def check_user() -> bool:
+    """Multi-step authentication: info → OTP email → JWT session."""
 
-    if "user_valid" not in st.session_state:
-        st.session_state.user_valid = False
+    # ── Init session keys ──────────────────────────────────────────
+    for key, default in [
+        ("user_valid", False),
+        ("otp_sent",   False),
+        ("jwt_token",  None),
+    ]:
+        if key not in st.session_state:
+            st.session_state[key] = default
 
-    if not st.session_state.user_valid:
-        st.markdown("### 👤 Informations Utilisateur")
-        st.markdown("---")
+    # ── Already logged in via JWT? ──────────────────────────────────
+    if not st.session_state.user_valid and st.session_state.jwt_token:
+        payload = verify_jwt(st.session_state.jwt_token)
+        if payload:
+            st.session_state.user_valid = True
+            st.session_state.user_info  = {
+                "nom":    payload["nom"],
+                "prenom": payload["prenom"],
+                "email":  payload["email"],
+            }
 
+    if st.session_state.user_valid:
+        return True
+
+    # ── Auth UI ────────────────────────────────────────────────────
+    st.markdown("## 🔐 Authentification")
+    st.markdown("---")
+
+    # ── STEP 1 : collect user info & send OTP ──────────────────────
+    if not st.session_state.otp_sent:
         with st.form("user_form"):
-            nom = st.text_input("Nom")
+            nom    = st.text_input("Nom")
             prenom = st.text_input("Prénom")
-            email = st.text_input("Email")
+            email  = st.text_input("Email")
 
-            submit = st.form_submit_button("Entrer dans l'application")
+            submitted = st.form_submit_button("📧 Envoyer le code de vérification",
+                                              type="primary", use_container_width=True)
 
-            if submit:
-                if nom and prenom and email:
-                    st.session_state.user_valid = True
-                    st.session_state.user_info = {
-                        "nom": nom,
-                        "prenom": prenom,
-                        "email": email
+            if submitted:
+                if not (nom and prenom and email):
+                    st.error("⚠️ Veuillez remplir tous les champs.")
+                else:
+                    otp = str(random.randint(100000, 999999))
+                    st.session_state["otp_code"]    = otp
+                    st.session_state["otp_expiry"]  = (
+                        datetime.datetime.utcnow() + datetime.timedelta(minutes=10)
+                    )
+                    st.session_state["pending_user"] = {
+                        "nom": nom, "prenom": prenom, "email": email
                     }
+                    with st.spinner("Envoi du code en cours…"):
+                        try:
+                            send_otp_email(email, otp, nom, prenom)
+                            st.session_state.otp_sent = True
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(f"❌ Impossible d'envoyer l'email : {exc}")
+                            st.caption(
+                                "Vérifiez SMTP_EMAIL / SMTP_PASSWORD dans le fichier .env "
+                                "et assurez-vous d'utiliser un **mot de passe d'application** Gmail."
+                            )
+
+    # ── STEP 2 : verify OTP ────────────────────────────────────────
+    else:
+        pending = st.session_state["pending_user"]
+        st.success(f"📧 Un code à 6 chiffres a été envoyé à **{pending['email']}**")
+        st.caption("Le code expire dans 10 minutes.")
+
+        with st.form("otp_form"):
+            otp_input = st.text_input("Code de vérification", max_chars=6,
+                                      placeholder="123456")
+            col_verify, col_resend = st.columns(2)
+            verify  = col_verify.form_submit_button("✅ Valider",
+                                                    type="primary",
+                                                    use_container_width=True)
+            resend  = col_resend.form_submit_button("🔄 Recommencer",
+                                                    use_container_width=True)
+
+            if resend:
+                for k in ("otp_code", "otp_expiry", "otp_sent", "pending_user"):
+                    st.session_state.pop(k, None)
+                st.rerun()
+
+            if verify:
+                now = datetime.datetime.utcnow()
+                if now > st.session_state["otp_expiry"]:
+                    st.error("⏰ Code expiré. Veuillez recommencer.")
+                    for k in ("otp_code", "otp_expiry", "otp_sent", "pending_user"):
+                        st.session_state.pop(k, None)
+                    st.rerun()
+                elif otp_input == st.session_state["otp_code"]:
+                    token = create_jwt(pending["nom"], pending["prenom"], pending["email"])
+                    st.session_state.jwt_token  = token
+                    st.session_state.user_valid = True
+                    st.session_state.user_info  = pending
+                    for k in ("otp_code", "otp_expiry", "otp_sent", "pending_user"):
+                        st.session_state.pop(k, None)
                     st.rerun()
                 else:
-                    st.error("⚠️ Veuillez remplir tous les champs")
+                    st.error("❌ Code incorrect. Réessayez.")
 
-        return False
-
-    return True
+    return False
 
 # =========================
 # CHECK USER BEFORE LOADING APP
@@ -183,7 +320,7 @@ if check_user():
         st.markdown("## 📊 Toutes les étapes du Backward Elimination")
         all_steps = BACKWARD_ELIMINATION_RESULTS["all_steps"]
 
-        st.info(f"Nombre total d'étapes : *{len(all_steps)}*")
+        st.info(f"Nombre total d'étapes : {len(all_steps)}")
 
         for step in all_steps:
             with st.expander(
