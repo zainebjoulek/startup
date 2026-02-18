@@ -228,4 +228,5 @@ if check_user():
             st.dataframe(df, use_container_width=True)
 
     except Exception as e:
-        st.error(str(e)) je veut les deux boutons une dans show all et l'autre  sauf the finlr res
+        st.error(str(e)) 
+
