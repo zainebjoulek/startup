@@ -92,10 +92,10 @@ def train_model(df):
     y = data['Profit'].values
     
     # Add constant and perform backward elimination
-    X_with_const = sm.add_constant(X)
+    x=np.append(arr=np.ones((50,1)).astype(int),values=x,axis=1)
     
     # Based on your notebook, the final model uses only const and R&D Spend (index 1)
-    X_opt = X_with_const[:, [0, 1]]  # const and R&D Spend
+    X_opt = x[:, [0, 1]]  # const and R&D Spend
     
     # Fit the final model
     model = sm.OLS(endog=y, exog=X_opt).fit()
@@ -358,4 +358,3 @@ if check_password():
     except Exception as e:
         st.error(f"❌ An error occurred: {str(e)}")
         st.exception(e)
-
